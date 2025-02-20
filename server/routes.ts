@@ -4,8 +4,10 @@ import express from 'express';
 import { storage } from "./storage";
 import { querySchema } from "@shared/schema";
 import { parseLogEntry, formatGrafanaResponse } from "./utils/logParser";
+import { log } from "./vite";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  log("Creating API router...");
   const apiRouter = express.Router();
 
   // Grafana Health Check
@@ -18,25 +20,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(['logs']);
   });
 
-  // Test endpoint to insert sample log
-  apiRouter.post('/test/insert-log', async (req, res) => {
-    try {
-      const rawLog = req.body;
-      const parsedLog = parseLogEntry(rawLog);
-      const result = await storage.insertLog(parsedLog);
-      res.json({ status: 'ok', message: 'Log inserted successfully', log: result });
-    } catch (error) {
-      console.error('Insert error:', error);
-      res.status(400).json({ 
-        error: 'Failed to insert log', 
-        details: error instanceof Error ? error.message : 'Unknown error' 
-      });
-    }
-  });
-
   // Main query endpoint
   apiRouter.post('/query', async (req, res) => {
     try {
+      log("Received query request");
       const query = querySchema.parse(req.body);
       const from = new Date(query.range.from);
       const to = new Date(query.range.to);
@@ -47,22 +34,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return acc;
       }, {} as Record<string, string>);
 
+      log("Fetching logs from Loki...");
       const logs = await storage.getLogs(from, to, filters);
       const parsedLogs = logs.map(log => parseLogEntry(log));
+      log("Successfully fetched and parsed logs");
 
       res.json(formatGrafanaResponse(parsedLogs));
     } catch (error) {
       console.error('Query error:', error);
       res.status(400).json({ 
-        error: 'Invalid query parameters', 
+        error: 'Query failed', 
         details: error instanceof Error ? error.message : 'Unknown error' 
       });
     }
-  });
-
-  // Annotations endpoint
-  apiRouter.post('/annotations', (_req, res) => {
-    res.json([]);
   });
 
   // Tag keys endpoint for variable support
@@ -84,15 +68,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (key === 'Level') {
       res.json(['error', 'warn', 'info', 'debug', 'trace'].map(v => ({ text: v })));
     } else {
-      // For other tags, return empty list for now
-      // In a real implementation, this would query the storage for unique values
+      // For other tags, return empty list as values will come from Loki
       res.json([]);
     }
   });
 
+  log("Mounting API routes...");
   // Mount all API routes under /api
   app.use('/api', apiRouter);
 
+  log("Creating HTTP server...");
   const httpServer = createServer(app);
   return httpServer;
 }

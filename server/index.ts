@@ -50,8 +50,12 @@ app.use('/api', (req, res, next) => {
 
 (async () => {
   try {
+    log("Starting server initialization...");
+
     // Register API routes first before any frontend middleware
+    log("Registering API routes...");
     const server = await registerRoutes(app);
+    log("API routes registered successfully");
 
     // Error handling middleware
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -63,9 +67,13 @@ app.use('/api', (req, res, next) => {
 
     // Setup Vite or static file serving after API routes
     if (app.get("env") === "development") {
+      log("Setting up Vite development server...");
       await setupVite(app, server);
+      log("Vite development server setup complete");
     } else {
+      log("Setting up static file serving...");
       serveStatic(app);
+      log("Static file serving setup complete");
     }
 
     const PORT = 5000;

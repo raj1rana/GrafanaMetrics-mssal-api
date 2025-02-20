@@ -1,56 +1,37 @@
 import { type LogEntry, type Log, type InsertLog } from "@shared/schema";
-import moment from "moment";
+import { lokiService } from "./services/loki";
 
 export interface IStorage {
   getLogs(from: Date, to: Date, filters?: Record<string, string>): Promise<Log[]>;
   insertLog(log: InsertLog): Promise<Log>;
 }
 
-export class MemStorage implements IStorage {
-  private logs: Log[];
-  private currentId: number;
-
-  constructor() {
-    this.logs = [];
-    this.currentId = 1;
-  }
-
+export class LokiStorage implements IStorage {
   async getLogs(from: Date, to: Date, filters?: Record<string, string>): Promise<Log[]> {
-    return this.logs.filter(log => {
-      const timestamp = moment(log.timestamp);
-      const matchesTimeRange = timestamp.isBetween(from, to);
+    const lokiQuery = lokiService.convertGrafanaQueryToLoki(filters);
 
-      if (!matchesTimeRange) return false;
-
-      if (filters) {
-        return Object.entries(filters).every(([key, value]) => {
-          if (key.startsWith('tags_') && log.tags && typeof log.tags === 'object') {
-            const tagKey = key.replace('tags_', '');
-            return (log.tags as Record<string, string>)[tagKey] === value;
-          }
-          return true;
-        });
-      }
-
-      return true;
+    const logs = await lokiService.queryRange({
+      query: lokiQuery,
+      start: Math.floor(from.getTime() / 1000),
+      end: Math.floor(to.getTime() / 1000)
     });
+
+    // Convert LogEntry to Log type
+    return logs.map((log, index) => ({
+      id: index + 1, // Use sequential IDs since Loki doesn't provide them
+      timestamp: new Date(log.timestamp),
+      message: log.message,
+      level: log.level,
+      eventRecordID: log.eventRecordID,
+      computer: log.computer || null, // Convert undefined to null to match type
+      tags: log.tags || null, // Convert undefined to null to match type
+      fields: log.fields || null // Convert undefined to null to match type
+    }));
   }
 
-  async insertLog(insertLog: InsertLog): Promise<Log> {
-    const id = this.currentId++;
-    const log: Log = {
-      id,
-      timestamp: new Date(insertLog.timestamp),
-      message: insertLog.message,
-      level: insertLog.level,
-      eventRecordID: insertLog.eventRecordID,
-      computer: insertLog.computer ?? null,
-      tags: insertLog.tags ?? null,
-      fields: insertLog.fields ?? null
-    };
-    this.logs.push(log);
-    return log;
+  async insertLog(_log: InsertLog): Promise<Log> {
+    throw new Error("Direct log insertion not supported when using Loki as backend");
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new LokiStorage();
