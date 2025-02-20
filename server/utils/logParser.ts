@@ -10,16 +10,35 @@ const LOG_LEVELS = {
 };
 
 export function parseLogEntry(rawLog: any): LogEntry {
-  const timestamp = moment(rawLog.timestamp).format();
-  
+  // Convert Unix timestamp to ISO format
+  const timestamp = moment.unix(Number(rawLog.timestamp)).toISOString();
+
+  // Extract message from fields_Data or fields_Message
+  const message = rawLog.fields_Data || rawLog.fields_Message || rawLog.message || '';
+
+  // Extract tags and fields
+  const tags: Record<string, string> = {};
+  const fields: Record<string, unknown> = {};
+
+  // Process all fields in rawLog
+  Object.entries(rawLog).forEach(([key, value]) => {
+    if (key.startsWith('tags_')) {
+      const tagKey = key.replace('tags_', '');
+      tags[tagKey] = String(value);
+    } else if (key.startsWith('fields_')) {
+      const fieldKey = key.replace('fields_', '');
+      fields[fieldKey] = value;
+    }
+  });
+
   return {
     timestamp,
-    message: rawLog.fields_Message || rawLog.message || '',
-    level: mapLogLevel(rawLog.fields_Level || 'info'),
+    message,
+    level: mapLogLevel(rawLog.level || rawLog.tags_Level || 'info'),
     eventRecordID: rawLog.fields_EventRecordID || String(Date.now()),
     computer: rawLog.tags_Computer,
-    tags: extractTags(rawLog),
-    fields: extractFields(rawLog)
+    tags,
+    fields
   };
 }
 
@@ -28,39 +47,25 @@ function mapLogLevel(level: string): string {
   return Object.keys(LOG_LEVELS).find(l => normalized.includes(l)) || 'info';
 }
 
-function extractTags(rawLog: any): Record<string, string> {
-  return Object.entries(rawLog)
-    .filter(([key]) => key.startsWith('tags_'))
-    .reduce((acc, [key, value]) => {
-      const tagName = key.replace('tags_', '');
-      acc[tagName] = String(value);
-      return acc;
-    }, {} as Record<string, string>);
-}
-
-function extractFields(rawLog: any): Record<string, unknown> {
-  return Object.entries(rawLog)
-    .filter(([key]) => key.startsWith('fields_'))
-    .reduce((acc, [key, value]) => {
-      const fieldName = key.replace('fields_', '');
-      acc[fieldName] = value;
-      return acc;
-    }, {} as Record<string, unknown>);
-}
-
 export function formatGrafanaResponse(logs: LogEntry[]) {
   return [{
     columns: [
       { text: 'Time', type: 'time' },
       { text: 'Message', type: 'string' },
       { text: 'Level', type: 'string' },
-      { text: 'EventRecordID', type: 'string' }
+      { text: 'EventRecordID', type: 'string' },
+      { text: 'Computer', type: 'string' },
+      { text: 'Tags', type: 'string' },
+      { text: 'Fields', type: 'string' }
     ],
     rows: logs.map(log => [
       log.timestamp,
       log.message,
       log.level,
-      log.eventRecordID
+      log.eventRecordID,
+      log.computer,
+      JSON.stringify(log.tags),
+      JSON.stringify(log.fields)
     ]),
     type: 'table'
   }];

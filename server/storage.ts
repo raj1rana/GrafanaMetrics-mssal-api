@@ -19,28 +19,34 @@ export class MemStorage implements IStorage {
     return this.logs.filter(log => {
       const timestamp = moment(log.timestamp);
       const matchesTimeRange = timestamp.isBetween(from, to);
-      
+
       if (!matchesTimeRange) return false;
-      
+
       if (filters) {
         return Object.entries(filters).every(([key, value]) => {
-          if (key.startsWith('tags_')) {
+          if (key.startsWith('tags_') && log.tags && typeof log.tags === 'object') {
             const tagKey = key.replace('tags_', '');
-            return log.tags?.[tagKey] === value;
+            return (log.tags as Record<string, string>)[tagKey] === value;
           }
           return true;
         });
       }
-      
+
       return true;
     });
   }
 
   async insertLog(insertLog: InsertLog): Promise<Log> {
     const id = this.currentId++;
-    const log: Log = { 
-      ...insertLog,
-      id
+    const log: Log = {
+      id,
+      timestamp: new Date(insertLog.timestamp),
+      message: insertLog.message,
+      level: insertLog.level,
+      eventRecordID: insertLog.eventRecordID,
+      computer: insertLog.computer ?? null,
+      tags: insertLog.tags ?? null,
+      fields: insertLog.fields ?? null
     };
     this.logs.push(log);
     return log;
