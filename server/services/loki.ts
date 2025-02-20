@@ -34,6 +34,17 @@ export class LokiService {
     limit?: number;
   }): Promise<LogEntry[]> {
     try {
+      // Validate parameters
+      if (!params.query) {
+        throw new Error('Query string is required');
+      }
+      if (!params.start || !params.end) {
+        throw new Error('Start and end timestamps are required');
+      }
+      if (params.start > params.end) {
+        throw new Error('Start timestamp cannot be greater than end timestamp');
+      }
+
       log(`Querying Loki with params: ${JSON.stringify(params)}`);
       const response = await axios.get(`${this.baseUrl}/loki/api/v1/query_range`, {
         params: {
@@ -42,7 +53,12 @@ export class LokiService {
           end: params.end,
           limit: params.limit || 1000,
         },
+        timeout: 30000, // 30 second timeout
       });
+
+      if (response.status !== 200) {
+        throw new Error(`Loki API returned status ${response.status}`);
+      }
 
       log("Received response from Loki, parsing data...");
       const parsed = lokiResponseSchema.parse(response.data);
